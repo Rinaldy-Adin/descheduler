@@ -615,10 +615,11 @@ k8s.io/api/storage/v1
 k8s.io/api/storage/v1alpha1
 k8s.io/api/storage/v1beta1
 k8s.io/api/storagemigration/v1alpha1
-# k8s.io/apiextensions-apiserver v0.30.0
+# k8s.io/apiextensions-apiserver v0.30.6
 ## explicit; go 1.22.0
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions
 k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1
+k8s.io/apiextensions-apiserver/pkg/features
 # k8s.io/apimachinery v0.32.0
 ## explicit; go 1.23.0
 k8s.io/apimachinery/pkg/api/equality
@@ -1220,6 +1221,7 @@ k8s.io/component-base/cli
 k8s.io/component-base/cli/flag
 k8s.io/component-base/config
 k8s.io/component-base/config/options
+k8s.io/component-base/config/v1alpha1
 k8s.io/component-base/featuregate
 k8s.io/component-base/logs
 k8s.io/component-base/logs/api/v1
@@ -1293,6 +1295,16 @@ k8s.io/kube-openapi/pkg/validation/errors
 k8s.io/kube-openapi/pkg/validation/spec
 k8s.io/kube-openapi/pkg/validation/strfmt
 k8s.io/kube-openapi/pkg/validation/strfmt/bson
+# k8s.io/kube-scheduler v0.30.6
+## explicit; go 1.22.0
+k8s.io/kube-scheduler/config/v1
+# k8s.io/kubernetes v1.30.6
+## explicit; go 1.22.0
+k8s.io/kubernetes/pkg/features
+k8s.io/kubernetes/pkg/scheduler/apis/config
+k8s.io/kubernetes/pkg/scheduler/apis/config/scheme
+k8s.io/kubernetes/pkg/scheduler/apis/config/v1
+k8s.io/kubernetes/pkg/scheduler/framework/plugins/names
 # k8s.io/metrics v0.32.0
 ## explicit; go 1.23.0
 k8s.io/metrics/pkg/apis/metrics
@@ -1376,6 +1388,9 @@ sigs.k8s.io/json/internal/golang/encoding/json
 ## explicit; go 1.15
 sigs.k8s.io/mdtoc
 sigs.k8s.io/mdtoc/pkg/mdtoc
+# sigs.k8s.io/scheduler-plugins v0.30.6
+## explicit; go 1.22.0
+sigs.k8s.io/scheduler-plugins/apis/config
 # sigs.k8s.io/structured-merge-diff/v4 v4.4.2
 ## explicit; go 1.13
 sigs.k8s.io/structured-merge-diff/v4/fieldpath
