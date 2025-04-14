@@ -39,6 +39,10 @@ type DeschedulerConfiguration struct {
 	// PolicyConfigFile is the filepath to the descheduler policy configuration.
 	PolicyConfigFile string `json:"policyConfigFile,omitempty"`
 
+	// KubeSchedulerConfigFile is the filepath to the kube-scheduler policy configuration.
+	// used to configure Load Aware descheduler policies
+	KubeSchedulerConfigFile string `json:"kubeSchedulerConfigFile,omitempty"`
+
 	// Dry run
 	DryRun bool `json:"dryRun,omitempty"`
 

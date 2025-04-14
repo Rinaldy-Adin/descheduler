@@ -30,6 +30,8 @@ require (
 	sigs.k8s.io/yaml v1.4.0
 )
 
+require sigs.k8s.io/scheduler-plugins v0.30.6
+
 require (
 	cel.dev/expr v0.18.0 // indirect
 	github.com/BurntSushi/toml v0.3.1 // indirect
@@ -114,10 +116,12 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
-	k8s.io/apiextensions-apiserver v0.30.0 // indirect
+	k8s.io/apiextensions-apiserver v0.30.6 // indirect
 	k8s.io/gengo/v2 v2.0.0-20240911193312-2b36238f13e9 // indirect
 	k8s.io/kms v0.32.0 // indirect
 	k8s.io/kube-openapi v0.30.0 // indirect
+	k8s.io/kube-scheduler v0.30.6 // indirect
+	k8s.io/kubernetes v1.30.6 // indirect
 	kubevirt.io/controller-lifecycle-operator-sdk/api v0.0.0-20220329064328-f3cc58c6ed90 // indirect
 	sigs.k8s.io/apiserver-network-proxy/konnectivity-client v0.31.0 // indirect
 	sigs.k8s.io/json v0.0.0-20241010143419-9aa6b5e7a4b3 // indirect
