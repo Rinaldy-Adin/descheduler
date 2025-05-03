@@ -321,6 +321,10 @@ func Run(ctx context.Context, rs *options.DeschedulerServer) error {
 		return fmt.Errorf("deschedulerPolicy is nil")
 	}
 
+	if err := OverrideWithKubeSchedulerConfig(rs.KubeSchedulerConfigFile, deschedulerPolicy); err != nil {
+		return err
+	}
+
 	// Add k8s compatibility warnings to logs
 	if err := validateVersionCompatibility(rs.Client.Discovery(), version.Get()); err != nil {
 		klog.Warning(err.Error())
