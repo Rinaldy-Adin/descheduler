@@ -18,7 +18,7 @@ import (
 	"sigs.k8s.io/descheduler/pkg/utils"
 )
 
-const LoadVariationRiskBalancingPluginName = "LodVariationRiskBalancing"
+const LoadVariationRiskBalancingPluginName = "LoadVariationRiskBalancing"
 
 type continueEvictionCond func(NodeDistributionInfo, resource.Quantity) bool
 
@@ -66,6 +66,8 @@ func NewLoadVariationRiskBalancing(
 		)
 	}
 
+	klog.V(1).Info("using LoadVariationRiskBalancing")
+
 	// if we are using prometheus we need to validate we have everything we
 	// need. if we aren't then we need to make sure we are also collecting
 	// data for cpu, memory and pods.
@@ -97,7 +99,16 @@ func NewLoadVariationRiskBalancing(
 		handle.GetPodsAssignedToNodeFunc(),
 		handle.PrometheusClient(),
 		// TODO: make sure query is between 0 and 1
-		`(sum by (instance) (rate(node_cpu_seconds_total{mode!="idle"}[1m]))) / (count by (instance) (node_cpu_seconds_total{mode="idle"}))`,
+		`
+		label_replace(
+		  (
+			1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))
+		  )
+			* on(instance) group_left(nodename)
+			node_uname_info,
+		  "instance", "$1", "nodename", "(.*)"
+		)
+		`,
 		`sum by (pod) (rate(container_cpu_usage_seconds_total{container!=""}[1m]))`,
 	)
 
@@ -105,7 +116,16 @@ func NewLoadVariationRiskBalancing(
 		handle.GetPodsAssignedToNodeFunc(),
 		handle.PrometheusClient(),
 		//  TODO: make sure this is correct with query for average
-		`stddev_over_time( sum by (instance) ( rate(node_cpu_seconds_total{mode!="idle"}[1m]))[5m:])`,
+		`
+			label_replace(
+			  (
+				stddev_over_time( sum by (instance) ( rate(node_cpu_seconds_total{mode!="idle"}[1m]))[5m:])
+			  )
+				* on(instance) group_left(nodename)
+				node_uname_info,
+			  "instance", "$1", "nodename", "(.*)"
+			)
+		`,
 		`stddev_over_time( sum by (pod) (rate(container_cpu_usage_seconds_total{container!=""}[1m]))[5m:])`,
 	)
 
@@ -139,6 +159,18 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 	// TODO: check usage map is already divided by capacity or not, make sure usage map has raw Data
 	nodesMap, rawAvgUsage, rawStdDevUsage, podListMap := getNodeUsageDistributionSnapshot(nodes, l.avgUsageClient, l.stdDevUsageClient)
 	capacities := getCPUNodeCapacities(nodes)
+
+	rawAvgUsageLogKeys := quantityMapsToKeysAndValues(rawAvgUsage)
+	klog.V(1).InfoS(
+		"Raw Average Usage Snapshot",
+		rawAvgUsageLogKeys...,
+	)
+
+	rawStdDevUsageLogKeys := quantityMapsToKeysAndValues(rawAvgUsage)
+	klog.V(1).InfoS(
+		"Raw Standard Deviation Usage Snapshot",
+		rawStdDevUsageLogKeys...,
+	)
 
 	usageMap := rawUsageToPctUsageMap(rawAvgUsage, rawStdDevUsage, capacities)
 
@@ -241,7 +273,7 @@ func evictPodsFromSourceNodes(
 		}
 
 		klog.V(1).InfoS(
-			"Evicting pods based on priority, if they have same priority, they'll be evicted based on QoS tiers",
+			"Evicting pods based on risk, if they have same priority, they'll be evicted based on QoS tiers",
 		)
 
 		sortPodsByRisk(removablePods, avgUsageClient, stdDevUsageClient)
@@ -478,14 +510,15 @@ func (l *LoadVariationRiskBalancing) classifyLoadDistribution(
 
 		// evaluate overall risk factor
 		risk := mu + sigma
-		klog.V(6).Info("Evaluating risk factor", "mu", mu, "sigma", sigma, "risk", risk)
 
 		// TODO: threshold args
 		var sliceToAppend *[]NodeDistributionInfo
-		if risk > 1 {
+		if risk > 100 {
 			sliceToAppend = &highRiskNodes
+			klog.V(1).InfoS("Node classified as high risk", "node", klog.KObj(nodeMap[nodeName]), "mu", mu, "sigma", sigma, "risk", risk)
 		} else {
 			sliceToAppend = &lowRiskNodes
+			klog.V(1).InfoS("Node classified as low risk", "node", klog.KObj(nodeMap[nodeName]), "mu", mu, "sigma", sigma, "risk", risk)
 		}
 
 		*sliceToAppend = append(*sliceToAppend, NodeDistributionInfo{
@@ -496,6 +529,7 @@ func (l *LoadVariationRiskBalancing) classifyLoadDistribution(
 				capacity: capacityMap[nodeName],
 				allPods:  podListMap[nodeName],
 			},
+			available: capacityMap[nodeName],
 		})
 	}
 
@@ -595,4 +629,12 @@ func sortPodsByRisk(
 
 		return pi < pj
 	})
+}
+
+func quantityMapsToKeysAndValues(quantityMap map[string]resource.Quantity) []any {
+	keysAndValues := []any{}
+	for nodeName, qty := range quantityMap {
+		keysAndValues = append(keysAndValues, nodeName, qty.Value())
+	}
+	return keysAndValues
 }

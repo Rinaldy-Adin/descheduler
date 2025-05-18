@@ -41,6 +41,7 @@ REGISTRY?=gcr.io/k8s-staging-descheduler
 
 # IMAGE is the image name of descheduler
 IMAGE:=descheduler:$(VERSION)
+IMAGE:=kube-descheduler:latest
 
 # IMAGE_GCLOUD is the image name of descheduler in the remote registry
 IMAGE_GCLOUD:=$(REGISTRY)/descheduler:$(VERSION)
@@ -72,6 +73,10 @@ build.arm64:
 
 dev-image: build
 	$(CONTAINER_ENGINE) build -f Dockerfile.dev -t $(IMAGE) .
+
+dev-push: dev-image
+	docker tag kube-descheduler:latest public.ecr.aws/j4m1b0q4/kubernetes/kube-descheduler:latest
+	docker push public.ecr.aws/j4m1b0q4/kubernetes/kube-descheduler:latest
 
 image:
 	$(CONTAINER_ENGINE) build --build-arg VERSION="$(VERSION)" --build-arg ARCH="amd64" -t $(IMAGE) .

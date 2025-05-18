@@ -334,6 +334,7 @@ func PodUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clien
 
 func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node) error {
 	client._nodeUtilization = make(map[string]map[v1.ResourceName]*resource.Quantity)
+	client._podsUtilization = make(map[string]map[v1.ResourceName]*resource.Quantity)
 	client._pods = make(map[string][]*v1.Pod)
 
 	nodeUsages, err := NodeUsageFromPrometheusMetrics(ctx, client.promClient, client.promQuery)
@@ -366,7 +367,7 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 			podName := pod.Name
 
 			if _, exists := podUsages[podName]; !exists {
-				return fmt.Errorf("unable to find metric entry for %v", podName)
+				return fmt.Errorf("unable to find metric entry for %v, using query %q", podName, client.promQueryPods)
 			}
 
 			client._podsUtilization[podName] = podUsages[podName]
