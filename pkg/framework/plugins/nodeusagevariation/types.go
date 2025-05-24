@@ -32,3 +32,18 @@ type LoadVariationRiskBalancingArgs struct {
 	// root power for std deviation, defaults to 2
 	SafeVarianceSensitivity api.Percentage `json:"safeVarianceSensitivity,omitempty"`
 }
+
+// +k8s:deepcopy-gen=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+type LowRiskOvercommitArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	// Naming this one differently since namespaces are still
+	// considered while considering resources used by pods
+	// but then filtered out before eviction
+	EvictableNamespaces *api.Namespaces `json:"evictableNamespaces,omitempty"`
+
+	// evictionLimits limits the number of evictions per domain. E.g. node, namespace, total.
+	EvictionLimits *api.EvictionLimits `json:"evictionLimits,omitempty"`
+}

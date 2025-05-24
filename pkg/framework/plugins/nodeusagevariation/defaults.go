@@ -35,3 +35,6 @@ func SetDefaults_LoadVariationRiskBalancing(obj runtime.Object) {
 		args.RiskThreshold = 2
 	}
 }
+
+func SetDefaults_LowRiskOvercommit(obj runtime.Object) {
+}

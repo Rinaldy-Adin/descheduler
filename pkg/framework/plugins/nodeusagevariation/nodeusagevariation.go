@@ -230,6 +230,8 @@ func subtractPodUsageFromNodeAvailability(
 	podUsage *resource.Quantity,
 ) {
 	nodeInfo.avg.Sub(*podUsage)
+
+	// TODO: consider to use requests instead, on max of either
 	available.Sub(*podUsage)
 }
 
@@ -238,6 +240,7 @@ func assessAvailableResourceInNodes(
 ) resource.Quantity {
 	available := resource.NewQuantity(0, resource.BinarySI)
 	for _, node := range nodes {
+		// TODO: consider to use requests instead, on max of either
 		usage := node.avg
 
 		available.Add(node.available)
@@ -269,6 +272,7 @@ func rawUsageToPctUsageMap(
 	return usageMap
 }
 
+// TODO: check usage map is already divided by capacity or not, make sure usage map has raw Data
 func getNodeUsageDistributionSnapshot(
 	nodes []*v1.Node,
 	avgUsageClient usageClient,

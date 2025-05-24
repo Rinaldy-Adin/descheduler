@@ -45,3 +45,7 @@ func ValidateLoadVariationRiskBalancing(obj runtime.Object) error {
 
 	return nil
 }
+
+func ValidateLowRiskOvercommit(obj runtime.Object) error {
+	return nil
+}
