@@ -21,4 +21,14 @@ type LoadVariationRiskBalancingArgs struct {
 
 	// evictionLimits limits the number of evictions per domain. E.g. node, namespace, total.
 	EvictionLimits *api.EvictionLimits `json:"evictionLimits,omitempty"`
+
+	// threshold percentage for filtering if a node is overloaded, defaults to 90
+	// not set to 100 to capture nodes with high utilization but low variance
+	RiskThreshold api.Percentage `json:"riskThreshold,omitempty"`
+
+	// multiplier for std deviation, defaults to 1
+	SafeVarianceMargin api.Percentage `json:"SafeVarianceMargin,omitempty"`
+
+	// root power for std deviation, defaults to 2
+	SafeVarianceSensitivity api.Percentage `json:"safeVarianceSensitivity,omitempty"`
 }

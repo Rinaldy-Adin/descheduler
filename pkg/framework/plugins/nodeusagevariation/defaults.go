@@ -22,4 +22,16 @@ func addDefaultingFuncs(scheme *runtime.Scheme) error {
 }
 
 func SetDefaults_LoadVariationRiskBalancing(obj runtime.Object) {
+	args := obj.(*LoadVariationRiskBalancingArgs)
+	if args.RiskThreshold == 0 {
+		args.RiskThreshold = 90
+	}
+
+	if args.SafeVarianceMargin == 0 {
+		args.RiskThreshold = 1
+	}
+
+	if args.SafeVarianceSensitivity == 0 {
+		args.RiskThreshold = 2
+	}
 }

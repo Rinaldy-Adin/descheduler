@@ -3,6 +3,7 @@ package nodeusagevariation
 import (
 	"context"
 	"fmt"
+	"math"
 	"sort"
 
 	v1 "k8s.io/api/core/v1"
@@ -168,10 +169,17 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 	// as the node usage drops below the threshold.
 	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity) bool {
 		if !l.isNodeAboveTargetRisk(nodeInfo) {
+			klog.V(1).InfoS("Stopping eviction due to node already under target risk",
+				"avg", nodeInfo.avg.MilliValue(),
+				"stdDev", nodeInfo.stdDev.MilliValue(),
+				"capacity", nodeInfo.capacity.MilliValue(),
+			)
 			return false
 		}
 
 		if totalAvailableUsage.CmpInt64(0) < 1 {
+			klog.V(1).InfoS("Stopping eviction due to running out of available usage in low risk pods",
+				"totalAvailableUsage", totalAvailableUsage.MilliValue())
 			return false
 		}
 
@@ -254,11 +262,11 @@ func (l *LoadVariationRiskBalancing) classifyLoadDistribution(
 		//sigma = max(min(sigma, 1), 0)
 
 		// evaluate overall risk factor
-		risk := mu + sigma
+		risk := l.calculateRiskFromPercentage(mu, sigma)
 
 		// TODO: threshold args
 		var sliceToAppend *[]NodeDistributionInfo
-		if risk > 100 {
+		if risk > l.args.RiskThreshold {
 			sliceToAppend = &highRiskNodes
 			klog.V(1).InfoS("Node classified as high risk", "node", klog.KObj(nodeMap[nodeName]), "mu", mu, "sigma", sigma, "risk", risk)
 		} else {
@@ -282,7 +290,20 @@ func (l *LoadVariationRiskBalancing) classifyLoadDistribution(
 }
 
 func (l *LoadVariationRiskBalancing) calculateRiskFromQuantities(avg, stdDev, capacity resource.Quantity) api.Percentage {
-	return api.Percentage(float64(avg.MilliValue()+stdDev.MilliValue()) / float64(capacity.MilliValue()))
+	return l.calculateRiskFromPercentage(
+		ResourceQuantityToPercentage(avg, capacity),
+		ResourceQuantityToPercentage(stdDev, capacity),
+	)
+}
+
+func (l *LoadVariationRiskBalancing) calculateRiskFromPercentage(avg, stdDev api.Percentage) api.Percentage {
+	sigma := float64(stdDev)
+	margin := float64(l.args.SafeVarianceMargin)
+	sensitivity := float64(l.args.SafeVarianceSensitivity)
+
+	sigma = math.Pow(sigma, 1/sensitivity)
+	sigma *= margin
+	return api.Percentage(avg + api.Percentage(sigma))
 }
 
 func (l *LoadVariationRiskBalancing) sortNodesByUsageRisk(
@@ -305,5 +326,5 @@ func (l *LoadVariationRiskBalancing) isNodeAboveTargetRisk(nodeInfo NodeDistribu
 	risk := l.calculateRiskFromQuantities(nodeInfo.avg, nodeInfo.stdDev, nodeInfo.capacity)
 
 	// TODO: use ita for threshold
-	return risk > 100.
+	return risk > l.args.RiskThreshold
 }

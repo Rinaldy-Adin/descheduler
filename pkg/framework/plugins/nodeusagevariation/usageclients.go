@@ -367,7 +367,8 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 			podName := pod.Name
 
 			if _, exists := podUsages[podName]; !exists {
-				return fmt.Errorf("unable to find metric entry for %v, using query %q", podName, client.promQueryPods)
+				klog.V(1).ErrorS(fmt.Errorf("unable to find metric entry for pod"), "podName", podName, "query", client.promQueryPods)
+				continue
 			}
 
 			client._podsUtilization[podName] = podUsages[podName]

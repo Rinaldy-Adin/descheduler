@@ -305,7 +305,7 @@ func getCPUNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
 func ResourceQuantityToPercentage(
 	value, total resource.Quantity,
 ) api.Percentage {
-	return api.Percentage(value.MilliValue() / total.MilliValue())
+	return api.Percentage(value.MilliValue() / total.MilliValue() * 100)
 }
 
 func PercentageToResourceQuantity(
