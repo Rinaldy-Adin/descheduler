@@ -305,7 +305,7 @@ func getCPUNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
 func ResourceQuantityToPercentage(
 	value, total resource.Quantity,
 ) api.Percentage {
-	return api.Percentage(value.MilliValue() / total.MilliValue() * 100)
+	return api.Percentage(float64(value.MilliValue()) / float64(total.MilliValue()) * 100.)
 }
 
 func PercentageToResourceQuantity(
@@ -341,7 +341,15 @@ func classifyPods(pods []*v1.Pod, filter func(pod *v1.Pod) bool) ([]*v1.Pod, []*
 func quantityMapsToKeysAndValues(quantityMap map[string]resource.Quantity) []any {
 	keysAndValues := []any{}
 	for nodeName, qty := range quantityMap {
-		keysAndValues = append(keysAndValues, nodeName, qty.Value())
+		keysAndValues = append(keysAndValues, nodeName, qty.MilliValue())
+	}
+	return keysAndValues
+}
+
+func usageMapToKeysAndValues(usageMap map[string]ResourceUsageDistributions) []any {
+	keysAndValues := []any{}
+	for nodeName, usage := range usageMap {
+		keysAndValues = append(keysAndValues, "avg-"+nodeName, usage.avg, "stdDev-"+nodeName, usage.stdDev)
 	}
 	return keysAndValues
 }

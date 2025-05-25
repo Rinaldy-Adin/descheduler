@@ -295,7 +295,7 @@ func NodeUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clie
 			return nil, fmt.Errorf("The collected metrics sample for %q has value %v outside of <0; 1> interval", string(nodeName), sample.Value)
 		}
 		nodeUsages[string(nodeName)] = map[v1.ResourceName]*resource.Quantity{
-			MetricResource: resource.NewQuantity(int64(sample.Value*100), resource.DecimalSI),
+			MetricResource: resource.NewMilliQuantity(int64(sample.Value*1000), resource.DecimalSI),
 		}
 	}
 
@@ -325,7 +325,7 @@ func PodUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clien
 			return nil, fmt.Errorf("The collected metrics sample for %q has value %v outside of <0; 1> interval", string(podName), sample.Value)
 		}
 		podUsages[string(podName)] = map[v1.ResourceName]*resource.Quantity{
-			MetricResource: resource.NewQuantity(int64(sample.Value*100), resource.DecimalSI),
+			MetricResource: resource.NewMilliQuantity(int64(sample.Value*1000), resource.DecimalSI),
 		}
 	}
 
@@ -367,6 +367,7 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 			podName := pod.Name
 
 			if _, exists := podUsages[podName]; !exists {
+				// TODO: fix error logging lol
 				klog.V(1).ErrorS(fmt.Errorf("unable to find metric entry for pod"), "podName", podName, "query", client.promQueryPods)
 				continue
 			}

@@ -27,7 +27,7 @@ type LoadVariationRiskBalancingArgs struct {
 	RiskThreshold api.Percentage `json:"riskThreshold,omitempty"`
 
 	// multiplier for std deviation, defaults to 1
-	SafeVarianceMargin api.Percentage `json:"SafeVarianceMargin,omitempty"`
+	SafeVarianceMargin api.Percentage `json:"safeVarianceMargin,omitempty"`
 
 	// root power for std deviation, defaults to 2
 	SafeVarianceSensitivity api.Percentage `json:"safeVarianceSensitivity,omitempty"`

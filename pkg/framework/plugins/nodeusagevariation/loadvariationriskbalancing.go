@@ -148,6 +148,12 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 
 	usageMap := rawUsageToPctUsageMap(rawAvgUsage, rawStdDevUsage, capacities)
 
+	usageMapLogKeys := usageMapToKeysAndValues(usageMap)
+	klog.V(1).InfoS(
+		"Percentage Usage Snapshot",
+		usageMapLogKeys...,
+	)
+
 	// TODO: logging
 	lowRiskNodes, highRiskNodes := l.classifyLoadDistribution(nodesMap, usageMap, podListMap, capacities)
 
