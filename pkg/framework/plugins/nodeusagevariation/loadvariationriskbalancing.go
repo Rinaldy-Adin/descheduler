@@ -201,6 +201,8 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 		pods []*v1.Pod,
 		avgUsageClient, stdDevUsageClient usageClient,
 	) {
+		// 1. put pods that will lower limit to under capacity in front, sort by highest limit, only put until capacity is lower
+		// 2. other than pods put in front by step (1), sort by usage and stdDev
 		podAvgUsage := make(map[string]*resource.Quantity)
 		podStdDevUsage := make(map[string]*resource.Quantity)
 
@@ -212,11 +214,12 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 			podStdDevUsage[pod.Name] = stdDev[MetricResource]
 		}
 
+		nodeCapacity := capacities[node.node.Name]
 		sort.Slice(pods, func(i, j int) bool {
-			pi := podAvgUsage[pods[i].Name].MilliValue() + podStdDevUsage[pods[i].Name].MilliValue()
-			pj := podAvgUsage[pods[j].Name].MilliValue() + podStdDevUsage[pods[j].Name].MilliValue()
+			pi := l.calculateRiskFromQuantities(*podAvgUsage[pods[i].Name], *podStdDevUsage[pods[i].Name], nodeCapacity)
+			pj := l.calculateRiskFromQuantities(*podAvgUsage[pods[j].Name], *podStdDevUsage[pods[j].Name], nodeCapacity)
 
-			return pi < pj
+			return pi > pj
 		})
 	}
 

@@ -39,6 +39,7 @@ type NodeDistributionUsage struct {
 type NodeDistributionInfo struct {
 	NodeDistributionUsage
 	available resource.Quantity
+	limit     resource.Quantity
 }
 
 func evictPodsFromSourceNodes(
@@ -188,6 +189,7 @@ func evictPods(
 		}
 
 		podUsage := podUsageResourceList[MetricResource]
+		podLimit := getPodLimit(pod)
 
 		if err := podEvictor.Evict(ctx, pod, evictOptions); err != nil {
 			switch err.(type) {
@@ -210,7 +212,7 @@ func evictPods(
 			continue
 		}
 
-		subtractPodUsageFromNodeAvailability(&totalAvailableUsage, &nodeInfo, podUsage)
+		subtractPodUsageFromNodeAvailability(&totalAvailableUsage, &nodeInfo, podUsage, podLimit)
 
 		keysAndValues := []any{"node", nodeInfo.node.Name}
 		keysAndValues = append(keysAndValues, usageToKeysAndValues(nodeInfo.avg)...)
@@ -228,8 +230,10 @@ func subtractPodUsageFromNodeAvailability(
 	available *resource.Quantity,
 	nodeInfo *NodeDistributionInfo,
 	podUsage *resource.Quantity,
+	podLimit *resource.Quantity,
 ) {
 	nodeInfo.avg.Sub(*podUsage)
+	nodeInfo.limit.Sub(*podLimit)
 
 	// TODO: consider to use requests instead, on max of either
 	available.Sub(*podUsage)
@@ -356,4 +360,16 @@ func usageMapToKeysAndValues(usageMap map[string]ResourceUsageDistributions) []a
 		keysAndValues = append(keysAndValues, "avg-"+nodeName, usage.avg, "stdDev-"+nodeName, usage.stdDev)
 	}
 	return keysAndValues
+}
+
+func getPodLimit(pod *v1.Pod) *resource.Quantity {
+	podLimit := resource.NewMilliQuantity(0, resource.BinarySI)
+
+	if pod.Spec.Resources != nil && pod.Spec.Resources.Limits != nil {
+		if limit, exists := pod.Spec.Resources.Limits[v1.ResourceCPU]; !exists {
+			podLimit.Add(limit)
+		}
+	}
+
+	return podLimit
 }

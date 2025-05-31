@@ -46,4 +46,8 @@ type LowRiskOvercommitArgs struct {
 
 	// evictionLimits limits the number of evictions per domain. E.g. node, namespace, total.
 	EvictionLimits *api.EvictionLimits `json:"evictionLimits,omitempty"`
+
+	// threshold percentage for filtering if a node is overloaded, defaults to 90
+	// not set to 100 to capture nodes with high utilization but low variance
+	RiskThreshold api.Percentage `json:"riskThreshold,omitempty"`
 }
