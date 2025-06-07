@@ -151,12 +151,16 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 
 	// this is a stop condition for the eviction process. we stop as soon
 	// as the node usage drops below the threshold.
-	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity) bool {
+	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity, totalAvailableLimit resource.Quantity) bool {
 		if !l.isNodeOvercommitted(nodeInfo) && !l.isNodeAboveTargetRisk(nodeInfo) {
 			return false
 		}
 
 		if totalAvailableUsage.CmpInt64(0) < 1 {
+			return false
+		}
+
+		if totalAvailableLimit.CmpInt64(0) < 1 {
 			return false
 		}
 

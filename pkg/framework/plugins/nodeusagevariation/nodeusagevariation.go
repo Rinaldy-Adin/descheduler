@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/descheduler/pkg/utils"
 )
 
-type continueEvictionCond func(NodeDistributionInfo, resource.Quantity) bool
+type continueEvictionCond func(NodeDistributionInfo, resource.Quantity, resource.Quantity) bool
 
 type podSorterLowToHigh func(NodeDistributionInfo, []*v1.Pod, usageClient, usageClient)
 
@@ -56,6 +56,9 @@ func evictPodsFromSourceNodes(
 	maxNoOfPodsToEvictPerNode *uint,
 ) {
 	available := assessAvailableResourceInNodes(destinationNodes)
+	klog.V(1).InfoS("Total capacity to be moved", usageToKeysAndValues(available)...)
+
+	limit := assessAvailableLimitInNodes(destinationNodes)
 	klog.V(1).InfoS("Total capacity to be moved", usageToKeysAndValues(available)...)
 
 	destinationTaints := make(map[string][]v1.Taint, len(destinationNodes))
@@ -99,6 +102,7 @@ func evictPodsFromSourceNodes(
 			removablePods,
 			node,
 			available,
+			limit,
 			destinationTaints,
 			podEvictor,
 			evictOptions,
@@ -121,6 +125,7 @@ func evictPods(
 	inputPods []*v1.Pod,
 	nodeInfo NodeDistributionInfo,
 	totalAvailableUsage resource.Quantity,
+	totalAvailableLimit resource.Quantity,
 	destinationTaints map[string][]v1.Taint,
 	podEvictor frameworktypes.Evictor,
 	evictOptions evictions.EvictOptions,
@@ -129,7 +134,7 @@ func evictPods(
 	maxNoOfPodsToEvictPerNode *uint,
 ) error {
 	// preemptive check to see if we should continue evicting pods.
-	if !continueEviction(nodeInfo, totalAvailableUsage) {
+	if !continueEviction(nodeInfo, totalAvailableUsage, totalAvailableLimit) {
 		return nil
 	}
 
@@ -212,14 +217,14 @@ func evictPods(
 			continue
 		}
 
-		subtractPodUsageFromNodeAvailability(&totalAvailableUsage, &nodeInfo, podUsage, podLimit)
+		subtractPodUsageFromNodeAvailability(&totalAvailableUsage, &totalAvailableLimit, &nodeInfo, podUsage, podLimit)
 
 		keysAndValues := []any{"node", nodeInfo.node.Name}
 		keysAndValues = append(keysAndValues, usageToKeysAndValues(nodeInfo.avg)...)
 		klog.V(3).InfoS("Updated node usage", keysAndValues...)
 
 		// make sure we should continue evicting pods.
-		if !continueEviction(nodeInfo, totalAvailableUsage) {
+		if !continueEviction(nodeInfo, totalAvailableUsage, totalAvailableLimit) {
 			break
 		}
 	}
@@ -228,6 +233,7 @@ func evictPods(
 
 func subtractPodUsageFromNodeAvailability(
 	available *resource.Quantity,
+	limit *resource.Quantity,
 	nodeInfo *NodeDistributionInfo,
 	podUsage *resource.Quantity,
 	podLimit *resource.Quantity,
@@ -237,6 +243,7 @@ func subtractPodUsageFromNodeAvailability(
 
 	// TODO: consider to use requests instead, on max of either
 	available.Sub(*podUsage)
+	limit.Sub(*podUsage)
 }
 
 func assessAvailableResourceInNodes(
@@ -252,6 +259,21 @@ func assessAvailableResourceInNodes(
 	}
 
 	return *available
+}
+
+func assessAvailableLimitInNodes(
+	nodes []NodeDistributionInfo,
+) resource.Quantity {
+	limit := resource.NewQuantity(0, resource.BinarySI)
+	for _, node := range nodes {
+		limit.Add(node.limit)
+
+		for _, pod := range node.allPods {
+			limit.Sub(*getPodLimit(pod))
+		}
+	}
+
+	return *limit
 }
 
 func rawUsageToPctUsageMap(
