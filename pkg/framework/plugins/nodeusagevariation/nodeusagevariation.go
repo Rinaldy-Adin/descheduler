@@ -327,7 +327,7 @@ func getNodeUsageDistributionSnapshot(
 func getCPUNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
 	capacities := map[string]resource.Quantity{}
 	for _, node := range nodes {
-		capacities[node.Name] = *resource.NewQuantity(1000, resource.DecimalSI)
+		capacities[node.Name] = *resource.NewQuantity(1, resource.DecimalSI)
 	}
 	return capacities
 }
