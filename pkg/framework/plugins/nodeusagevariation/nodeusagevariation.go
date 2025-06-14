@@ -324,7 +324,7 @@ func getNodeUsageDistributionSnapshot(
 	return nodesMap, rawAvgUsage, rawStdDevUsage, podListMap
 }
 
-func getCPUNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
+func getNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
 	capacities := map[string]resource.Quantity{}
 	for _, node := range nodes {
 		capacities[node.Name] = *resource.NewQuantity(1, resource.DecimalSI)
@@ -388,7 +388,7 @@ func getPodLimit(pod *v1.Pod) *resource.Quantity {
 	podLimit := resource.NewMilliQuantity(0, resource.BinarySI)
 
 	if pod.Spec.Resources != nil && pod.Spec.Resources.Limits != nil {
-		if limit, exists := pod.Spec.Resources.Limits[v1.ResourceCPU]; !exists {
+		if limit, exists := pod.Spec.Resources.Limits[v1.ResourceMemory]; !exists {
 			podLimit.Add(limit)
 		}
 	}

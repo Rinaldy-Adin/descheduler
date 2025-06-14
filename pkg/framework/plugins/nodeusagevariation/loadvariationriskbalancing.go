@@ -63,7 +63,7 @@ func NewLoadVariationRiskBalancing(
 		return nil, fmt.Errorf("error initializing pod filter function: %v", err)
 	}
 
-	resourceNames := []v1.ResourceName{v1.ResourceCPU}
+	resourceNames := []v1.ResourceName{v1.ResourceMemory}
 
 	if handle.PrometheusClient() == nil {
 		return nil, fmt.Errorf("prometheus client not initialized")
@@ -72,35 +72,15 @@ func NewLoadVariationRiskBalancing(
 	avgUsageClient := newPrometheusUsageClient(
 		handle.GetPodsAssignedToNodeFunc(),
 		handle.PrometheusClient(),
-		// TODO: make sure query is between 0 and 1
-		`
-		label_replace(
-		  (
-			1 - avg by (instance) (rate(node_cpu_seconds_total{mode="idle"}[1m]))
-		  )
-			* on(instance) group_left(nodename)
-			node_uname_info,
-		  "instance", "$1", "nodename", "(.*)"
-		)
-		`,
-		`sum by (pod) (rate(container_cpu_usage_seconds_total{container!=""}[1m]))`,
+		perNodeMemoryAvgPromQuery,
+		perPodMemoryAvgPromQuery,
 	)
 
 	stdDevUsageClient := newPrometheusUsageClient(
 		handle.GetPodsAssignedToNodeFunc(),
 		handle.PrometheusClient(),
-		//  TODO: make sure this is correct with query for average
-		`
-			label_replace(
-			  (
-				stddev_over_time( sum by (instance) ( rate(node_cpu_seconds_total{mode!="idle"}[1m]))[5m:])
-			  )
-				* on(instance) group_left(nodename)
-				node_uname_info,
-			  "instance", "$1", "nodename", "(.*)"
-			)
-		`,
-		`stddev_over_time( sum by (pod) (rate(container_cpu_usage_seconds_total{container!=""}[1m]))[5m:])`,
+		perNodeMemoryStdDevPromQuery,
+		perPodMemoryStdDevPromQuery,
 	)
 
 	return &LoadVariationRiskBalancing{
@@ -131,7 +111,7 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 	}
 
 	nodesMap, rawAvgUsage, rawStdDevUsage, podListMap := getNodeUsageDistributionSnapshot(nodes, l.avgUsageClient, l.stdDevUsageClient)
-	capacities := getCPUNodeCapacities(nodes)
+	capacities := getNodeCapacities(nodes)
 
 	rawAvgUsageLogKeys := quantityMapsToKeysAndValues(rawAvgUsage)
 	klog.V(1).InfoS(
