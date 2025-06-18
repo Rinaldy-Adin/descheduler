@@ -15,7 +15,7 @@ import (
 	"sigs.k8s.io/descheduler/pkg/utils"
 )
 
-type continueEvictionCond func(NodeDistributionInfo, resource.Quantity, resource.Quantity) bool
+type continueEvictionCond func(NodeDistributionInfo, resource.Quantity) bool
 
 type podSorterLowToHigh func(NodeDistributionInfo, []*v1.Pod, usageClient, usageClient)
 
@@ -39,7 +39,7 @@ type NodeDistributionUsage struct {
 type NodeDistributionInfo struct {
 	NodeDistributionUsage
 	available resource.Quantity
-	limit     resource.Quantity
+	limit     resource.Quantity // limits in actual memory quantities, not 0-1
 }
 
 func evictPodsFromSourceNodes(
@@ -58,8 +58,8 @@ func evictPodsFromSourceNodes(
 	available := assessAvailableResourceInNodes(destinationNodes)
 	klog.V(1).InfoS("Total capacity to be moved", usageToKeysAndValues(available)...)
 
-	limit := assessAvailableLimitInNodes(destinationNodes)
-	klog.V(1).InfoS("Total capacity to be moved", usageToKeysAndValues(available)...)
+	//limit := assessAvailableLimitInNodes(destinationNodes)
+	//klog.V(1).InfoS("Total capacity to be moved", usageToKeysAndValues(available)...)
 
 	destinationTaints := make(map[string][]v1.Taint, len(destinationNodes))
 	for _, node := range destinationNodes {
@@ -102,7 +102,6 @@ func evictPodsFromSourceNodes(
 			removablePods,
 			node,
 			available,
-			limit,
 			destinationTaints,
 			podEvictor,
 			evictOptions,
@@ -125,7 +124,6 @@ func evictPods(
 	inputPods []*v1.Pod,
 	nodeInfo NodeDistributionInfo,
 	totalAvailableUsage resource.Quantity,
-	totalAvailableLimit resource.Quantity,
 	destinationTaints map[string][]v1.Taint,
 	podEvictor frameworktypes.Evictor,
 	evictOptions evictions.EvictOptions,
@@ -134,7 +132,7 @@ func evictPods(
 	maxNoOfPodsToEvictPerNode *uint,
 ) error {
 	// preemptive check to see if we should continue evicting pods.
-	if !continueEviction(nodeInfo, totalAvailableUsage, totalAvailableLimit) {
+	if !continueEviction(nodeInfo, totalAvailableUsage) {
 		return nil
 	}
 
@@ -194,7 +192,7 @@ func evictPods(
 		}
 
 		podUsage := podUsageResourceList[MetricResource]
-		podLimit := getPodLimit(pod)
+		podLimit := getAbsPodLimit(pod)
 
 		if err := podEvictor.Evict(ctx, pod, evictOptions); err != nil {
 			switch err.(type) {
@@ -217,14 +215,14 @@ func evictPods(
 			continue
 		}
 
-		subtractPodUsageFromNodeAvailability(&totalAvailableUsage, &totalAvailableLimit, &nodeInfo, podUsage, podLimit)
+		subtractPodUsageFromNodeAvailability(&totalAvailableUsage, &nodeInfo, podUsage, podLimit)
 
 		keysAndValues := []any{"node", nodeInfo.node.Name}
 		keysAndValues = append(keysAndValues, usageToKeysAndValues(nodeInfo.avg)...)
 		klog.V(3).InfoS("Updated node usage", keysAndValues...)
 
 		// make sure we should continue evicting pods.
-		if !continueEviction(nodeInfo, totalAvailableUsage, totalAvailableLimit) {
+		if !continueEviction(nodeInfo, totalAvailableUsage) {
 			break
 		}
 	}
@@ -233,7 +231,6 @@ func evictPods(
 
 func subtractPodUsageFromNodeAvailability(
 	available *resource.Quantity,
-	limit *resource.Quantity,
 	nodeInfo *NodeDistributionInfo,
 	podUsage *resource.Quantity,
 	podLimit *resource.Quantity,
@@ -243,7 +240,6 @@ func subtractPodUsageFromNodeAvailability(
 
 	// TODO: consider to use requests instead, on max of either
 	available.Sub(*podUsage)
-	limit.Sub(*podUsage)
 }
 
 func assessAvailableResourceInNodes(
@@ -261,20 +257,20 @@ func assessAvailableResourceInNodes(
 	return *available
 }
 
-func assessAvailableLimitInNodes(
-	nodes []NodeDistributionInfo,
-) resource.Quantity {
-	limit := resource.NewQuantity(0, resource.BinarySI)
-	for _, node := range nodes {
-		limit.Add(node.limit)
+//func assessAvailableLimitInNodes(
+//nodes []NodeDistributionInfo,
+//) resource.Quantity {
+//limit := resource.NewQuantity(0, resource.BinarySI)
+//for _, node := range nodes {
+//limit.Add(node.limit)
 
-		for _, pod := range node.allPods {
-			limit.Sub(*getPodLimit(pod))
-		}
-	}
+//for _, pod := range node.allPods {
+//limit.Sub(*getAbsPodLimit(pod))
+//}
+//}
 
-	return *limit
-}
+//return *limit
+//}
 
 func rawUsageToPctUsageMap(
 	rawAvgUsage, rawStdDevUsage, rawCapacities map[string]resource.Quantity,
@@ -322,6 +318,36 @@ func getNodeUsageDistributionSnapshot(
 	}
 
 	return nodesMap, rawAvgUsage, rawStdDevUsage, podListMap
+}
+
+func getPodUsageDistributionSnapshot(
+	podListMap map[string][]*v1.Pod,
+	avgUsageClient usageClient,
+	stdDevUsageClient usageClient,
+) (
+	map[string]resource.Quantity,
+	map[string]resource.Quantity,
+) {
+	rawAvgUsage := make(map[string]resource.Quantity)
+	rawStdDevUsage := make(map[string]resource.Quantity)
+
+	for _, pods := range podListMap {
+		for _, pod := range pods {
+			avgUsageList, err := avgUsageClient.podUsage(pod)
+			if err != nil {
+				continue
+			}
+			rawAvgUsage[pod.Name] = *avgUsageList[MetricResource]
+
+			stdDevUsageList, err := stdDevUsageClient.podUsage(pod)
+			if err != nil {
+				continue
+			}
+			rawStdDevUsage[pod.Name] = *stdDevUsageList[MetricResource]
+		}
+	}
+
+	return rawAvgUsage, rawStdDevUsage
 }
 
 func getNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
@@ -384,7 +410,7 @@ func usageMapToKeysAndValues(usageMap map[string]ResourceUsageDistributions) []a
 	return keysAndValues
 }
 
-func getPodLimit(pod *v1.Pod) *resource.Quantity {
+func getAbsPodLimit(pod *v1.Pod) *resource.Quantity {
 	podLimit := resource.NewMilliQuantity(0, resource.BinarySI)
 
 	if pod.Spec.Resources != nil && pod.Spec.Resources.Limits != nil {
@@ -394,4 +420,42 @@ func getPodLimit(pod *v1.Pod) *resource.Quantity {
 	}
 
 	return podLimit
+}
+
+func getRelPodLimit(pod *v1.Pod, node *v1.Node) api.Percentage {
+	absPodLimit := getAbsPodLimit(pod)
+	pct := api.Percentage(absPodLimit.AsApproximateFloat64())
+
+	if capacity, ok := node.Status.Capacity[v1.ResourceMemory]; ok {
+		pct /= api.Percentage(capacity.AsApproximateFloat64())
+		pct *= 100.
+		return pct
+	}
+
+	return pct
+}
+
+func getAbsPodRequests(pod *v1.Pod) *resource.Quantity {
+	podRequest := resource.NewMilliQuantity(0, resource.BinarySI)
+
+	if pod.Spec.Resources != nil && pod.Spec.Resources.Requests != nil {
+		if request, exists := pod.Spec.Resources.Requests[v1.ResourceMemory]; !exists {
+			podRequest.Add(request)
+		}
+	}
+
+	return podRequest
+}
+
+func getRelPodRequest(pod *v1.Pod, node *v1.Node) api.Percentage {
+	absPodRequest := getAbsPodRequests(pod)
+	pct := api.Percentage(absPodRequest.AsApproximateFloat64())
+
+	if capacity, ok := node.Status.Capacity[v1.ResourceMemory]; ok {
+		pct /= api.Percentage(capacity.AsApproximateFloat64())
+		pct *= 100.
+		return pct
+	}
+
+	return pct
 }

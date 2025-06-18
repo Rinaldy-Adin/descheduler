@@ -152,7 +152,7 @@ func (l *LoadVariationRiskBalancing) Balance(ctx context.Context, nodes []*v1.No
 
 	// this is a stop condition for the eviction process. we stop as soon
 	// as the node usage drops below the threshold.
-	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity, totalAvailableLimit resource.Quantity) bool {
+	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity) bool {
 		if !l.isNodeAboveTargetRisk(nodeInfo) {
 			klog.V(1).InfoS("Stopping eviction due to node already under target risk",
 				"avg", nodeInfo.avg.MilliValue(),

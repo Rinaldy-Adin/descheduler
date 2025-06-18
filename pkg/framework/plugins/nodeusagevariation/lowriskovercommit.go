@@ -97,6 +97,7 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 	}
 
 	nodesMap, rawAvgUsage, rawStdDevUsage, podListMap := getNodeUsageDistributionSnapshot(nodes, l.avgUsageClient, l.stdDevUsageClient)
+	rawAvgPodUsage, rawStdDevPodUsage := getPodUsageDistributionSnapshot(podListMap, l.avgUsageClient, l.stdDevUsageClient)
 	capacities := getNodeCapacities(nodes)
 
 	rawAvgUsageLogKeys := quantityMapsToKeysAndValues(rawAvgUsage)
@@ -112,8 +113,9 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 	)
 
 	usageMap := rawUsageToPctUsageMap(rawAvgUsage, rawStdDevUsage, capacities)
+	podUsageMap := rawUsageToPctUsageMap(rawAvgPodUsage, rawStdDevPodUsage, capacities)
 
-	underUsedNodes, overUsedNodes := l.classifyLoadDistribution(nodesMap, usageMap, podListMap, capacities)
+	underUsedNodes, overUsedNodes := l.classifyLoadDistribution(nodesMap, usageMap, podListMap, podUsageMap, capacities)
 
 	if len(overUsedNodes) == 0 {
 		klog.V(1).InfoS(
@@ -131,16 +133,12 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 
 	// this is a stop condition for the eviction process. we stop as soon
 	// as the node usage drops below the threshold.
-	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity, totalAvailableLimit resource.Quantity) bool {
+	continueEvictionCond := func(nodeInfo NodeDistributionInfo, totalAvailableUsage resource.Quantity) bool {
 		if !l.isNodeOvercommitted(nodeInfo) && !l.isNodeAboveTargetRisk(nodeInfo) {
 			return false
 		}
 
 		if totalAvailableUsage.CmpInt64(0) < 1 {
-			return false
-		}
-
-		if totalAvailableLimit.CmpInt64(0) < 1 {
 			return false
 		}
 
@@ -159,18 +157,11 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 	) {
 		// 1. put pods that will lower limit to under capacity in front, sort by highest limit, only put until capacity is lower
 		// 2. other than pods put in front by step (1), sort by usage and stdDev
-		podAvgUsage := make(map[string]*resource.Quantity)
-		podStdDevUsage := make(map[string]*resource.Quantity)
 		podsWithLimit := make([]*v1.Pod, 0)
 		podsWithoutLimit := make([]*v1.Pod, 0)
 
 		for _, pod := range pods {
-			avg, _ := avgUsageClient.podUsage(pod)
-			stdDev, _ := stdDevUsageClient.podUsage(pod)
-			podLimit := getPodLimit(pod)
-
-			podAvgUsage[pod.Name] = avg[MetricResource]
-			podStdDevUsage[pod.Name] = stdDev[MetricResource]
+			podLimit := getAbsPodLimit(pod)
 
 			if podLimit.CmpInt64(0) == 1 {
 				podsWithLimit = append(podsWithLimit, pod)
@@ -180,15 +171,24 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 		}
 
 		sort.Slice(podsWithLimit, func(i, j int) bool {
-			li := getPodLimit(podsWithLimit[i])
-			lj := getPodLimit(podsWithLimit[j])
 
-			return li.Cmp(*lj) == 1
+			getNormLimit := func(idx int) float64 {
+				usage, ok := podUsageMap[podsWithLimit[idx].Name]
+				if !ok {
+					return 0
+				}
+				u := float64(usage.avg)
+				l := float64(getRelPodLimit(podsWithLimit[idx], node.node))
+
+				return l / u
+			}
+
+			return getNormLimit(i) > getNormLimit(j)
 		})
 
 		limitToEvict := resource.NewQuantity(0, resource.BinarySI)
 		limitToEvict.Add(node.limit)
-		limitToEvict.Sub(node.capacity)
+		limitToEvict.Sub(node.node.Status.Capacity[v1.ResourceMemory])
 		podsToEvictDueToLimit := make([]*v1.Pod, 0)
 		lastIdx := 0
 		for idx, pod := range podsWithLimit {
@@ -198,7 +198,7 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 			}
 
 			podsToEvictDueToLimit = append(podsToEvictDueToLimit, pod)
-			limitToEvict.Sub(*getPodLimit(pod))
+			limitToEvict.Sub(*getAbsPodLimit(pod))
 		}
 
 		podsToSortByRisk := make([]*v1.Pod, 0)
@@ -207,13 +207,14 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 		}
 		podsToSortByRisk = append(podsToSortByRisk, podsWithoutLimit...)
 
-		nodeCapacity := capacities[node.node.Name]
 		sort.Slice(podsToSortByRisk, func(i, j int) bool {
-			pi := l.calculateRiskFromQuantities(*podAvgUsage[podsToSortByRisk[i].Name], *podStdDevUsage[podsToSortByRisk[i].Name], nodeCapacity)
-			pj := l.calculateRiskFromQuantities(*podAvgUsage[podsToSortByRisk[j].Name], *podStdDevUsage[podsToSortByRisk[j].Name], nodeCapacity)
+			pi := l.calculateRiskFromPercentage(podUsageMap[podsToSortByRisk[i].Name].avg, podUsageMap[podsToSortByRisk[i].Name].stdDev)
+			pj := l.calculateRiskFromPercentage(podUsageMap[podsToSortByRisk[j].Name].avg, podUsageMap[podsToSortByRisk[j].Name].stdDev)
 
 			return pi > pj
 		})
+
+		pods = append(podsToEvictDueToLimit, podsToSortByRisk...)
 	}
 
 	evictPodsFromSourceNodes(
@@ -239,6 +240,7 @@ func (l *LowRiskOvercommit) classifyLoadDistribution(
 	nodeMap map[string]*v1.Node,
 	usageMap map[string]ResourceUsageDistributions,
 	podListMap map[string][]*v1.Pod,
+	podUsageMap map[string]ResourceUsageDistributions,
 	capacityMap map[string]resource.Quantity,
 ) (
 	[]NodeDistributionInfo,
@@ -256,13 +258,22 @@ func (l *LowRiskOvercommit) classifyLoadDistribution(
 		mu := usageMap[nodeName].avg
 		sigma := usageMap[nodeName].stdDev
 
-		nodeTotalLimits := resource.NewQuantity(0, resource.BinarySI)
+		nodeAbsLimits := resource.NewQuantity(0, resource.BinarySI)
+		var nodeRelLimits api.Percentage
 		for _, pod := range podList {
-			nodeTotalLimits.Add(*getPodLimit(pod))
+			nodeRelLimits += getRelPodLimit(pod, nodeMap[nodeName])
+			nodeAbsLimits.Add(*getAbsPodLimit(pod))
 		}
 
-		if nodeTotalLimits.Cmp(capacityMap[nodeName]) == 1 {
-			nodeIsHighRisk = true
+		if nodeRelLimits > 100. {
+			for _, pod := range podList {
+				podRequest := getRelPodRequest(pod, nodeMap[nodeName])
+				podLimit := getRelPodLimit(pod, nodeMap[nodeName])
+				if podLimit == 0 || podRequest < podUsageMap[pod.Name].avg {
+					nodeIsHighRisk = true
+					break
+				}
+			}
 		}
 
 		risk := l.calculateRiskFromPercentage(mu, sigma)
@@ -289,7 +300,7 @@ func (l *LowRiskOvercommit) classifyLoadDistribution(
 				allPods:  podListMap[nodeName],
 			},
 			available: capacityMap[nodeName],
-			limit:     *nodeTotalLimits,
+			limit:     *nodeAbsLimits,
 		})
 	}
 
@@ -332,6 +343,5 @@ func (l *LowRiskOvercommit) isNodeAboveTargetRisk(nodeInfo NodeDistributionInfo)
 }
 
 func (l *LowRiskOvercommit) isNodeOvercommitted(nodeInfo NodeDistributionInfo) bool {
-	// TODO: use ita for threshold
-	return nodeInfo.limit.Cmp(nodeInfo.capacity) > -1
+	return nodeInfo.limit.Cmp(nodeInfo.node.Status.Capacity[v1.ResourceMemory]) > -1
 }
