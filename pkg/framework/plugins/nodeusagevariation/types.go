@@ -59,10 +59,10 @@ type LowRiskOvercommitArgs struct {
 type RemovePotentialOOMArgs struct {
 	metav1.TypeMeta `json:",inline"`
 
-	Namespaces *api.Namespaces `json:"namespaces,omitempty"`
+	Namespaces *api.Namespaces `json:"evictableNamespaces,omitempty"`
 
 	// Percentage of Node util to assume prediction as OOM
-	NodePredictionThreshold api.Percentage `json:"nodeThreshold,omitempty"`
+	NodePredictionThreshold api.Percentage `json:"nodePredictionThreshold,omitempty"`
 
 	// Percentage of Pod Limit to start evicting memory increasing pods
 	PodLimitPctThreshold api.Percentage `json:"podLimitPctThreshold,omitempty"`

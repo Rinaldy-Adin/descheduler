@@ -51,7 +51,10 @@ func computeLinearRegressionFromSamples(samples []model.SamplePair) (slope, inte
 		ssTot += (yi - meanY) * (yi - meanY)
 	}
 
-	r2 = 1.0 - (ssRes / ssTot)
+	r2 = 1
+	if ssTot != 0. {
+		r2 = 1.0 - (ssRes / ssTot)
+	}
 	return
 }
 

@@ -63,10 +63,12 @@ label_replace(
 
 const perPodMemorySlope = `deriv(container_memory_usage_bytes{pod="abc"}[1m])`
 
-const perPodMemoryAvgByLimitPromQuery = `
-sum(container_memory_usage_bytes{container!="",container!="POD"}) by (pod, namespace)
-/
-sum(kube_pod_container_resource_limits_memory_bytes{container!="",container!="POD"}) by (pod, namespace)
+const perNodeMemoryRawPromQuery = `instance:node_memory_utilisation:ratio * node_memory_MemTotal_bytes`
+
+const perPodMaxMemoryRawPromQuery = `
+sum by(pod) (
+  max_over_time(container_memory_usage_bytes{container!="", container!="POD"}[1m])
+)
 `
 
 const perPodMemoryPromQuery = `container_memory_usage_bytes{container!="", container!="POD"}`

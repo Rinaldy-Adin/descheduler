@@ -19,6 +19,7 @@ package nodeusagevariation
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -78,8 +79,8 @@ func NewRemovePotentialOOM(args runtime.Object, handle frameworktypes.Handle) (f
 	usageClient := newPrometheusUsageClient(
 		handle.GetPodsAssignedToNodeFunc(),
 		handle.PrometheusClient(),
-		perNodeMemoryAvgPromQuery,
-		perPodMemoryAvgByLimitPromQuery,
+		perNodeMemoryRawPromQuery,
+		perPodMaxMemoryRawPromQuery,
 	)
 
 	return &RemovePotentialOOM{
@@ -140,8 +141,9 @@ func (d *RemovePotentialOOM) Deschedule(ctx context.Context, nodes []*v1.Node) *
 // validateCanEvict looks at failedPodArgs to see if pod can be evicted given the args.
 func (d *RemovePotentialOOM) shouldEvict(pod *v1.Pod, node *v1.Node) (bool, error) {
 	var (
-		podHasLimit      bool
-		podOverThreshold bool
+		podHasLimit       bool
+		podOverThreshold  bool
+		nodeOverThreshold bool
 	)
 
 	podLimit := getAbsPodLimit(pod)
@@ -155,13 +157,25 @@ func (d *RemovePotentialOOM) shouldEvict(pod *v1.Pod, node *v1.Node) (bool, erro
 		return false, err
 	}
 	podUsageRaw := podResourceNames[MetricResource]
-	podUsage := ResourceQuantityToPercentage(*podUsageRaw, *resource.NewQuantity(1, resource.BinarySI))
-	if podUsage > d.args.PodLimitPctThreshold {
-		podOverThreshold = true
+	absPodLimit := getAbsPodLimit(pod)
+	if !absPodLimit.IsZero() {
+		podUsageByLimitPct := float64(podUsageRaw.Value()) / float64(absPodLimit.Value()) * 100.
+		if strings.HasPrefix(pod.Namespace, "default") {
+			klog.V(1).InfoS("Pod usage by limit", "pod", klog.KObj(pod), "usage", podUsageByLimitPct)
+		}
+		if podUsageByLimitPct > float64(d.args.PodLimitPctThreshold) {
+			podOverThreshold = true
+		}
 	}
 
+	nodeResourceNames := d.usageClient.nodeUtilization(node.Name)
+	nodeUsageRaw := nodeResourceNames[MetricResource]
+
 	if podHasLimit && podOverThreshold {
-		isOOM, err := d.isPodOOM(pod, getAbsPodLimit(pod))
+		if strings.HasPrefix(pod.Namespace, "default") {
+			klog.V(1).InfoS("Calculating isPodOOM based on pod limit", "pod", klog.KObj(pod))
+		}
+		isOOM, err := d.isPodOOM(pod, absPodLimit)
 		if err != nil {
 			klog.V(1).ErrorS(err, "Error calculating OOM prediction")
 			return false, err
@@ -169,11 +183,15 @@ func (d *RemovePotentialOOM) shouldEvict(pod *v1.Pod, node *v1.Node) (bool, erro
 		return isOOM, nil
 	}
 
-	nodeThreshold := resource.NewQuantity(int64(
-		float64(getAbsNodeCapacity(node).Value())*float64(d.args.NodePredictionThreshold/100.),
-	),
-		resource.BinarySI)
-	isOOM, err := d.isPodOOM(pod, nodeThreshold)
+	nodeThreshold := float64(getAbsNodeCapacity(node).Value()) * float64(d.args.NodePredictionThreshold) / 100.
+
+	if strings.HasPrefix(pod.Namespace, "default") {
+		klog.V(1).InfoS("Calculating isPodOOM based on node threshold", "pod", klog.KObj(pod), "nodeThreshold", nodeThreshold/(1024*1024))
+	}
+
+	podThresholdForNodeOOM := resource.NewQuantity(int64(nodeThreshold)-nodeUsageRaw.Value()+podUsageRaw.Value(), resource.BinarySI)
+
+	isOOM, err := d.isPodOOM(pod, podThresholdForNodeOOM)
 	if err != nil {
 		klog.V(1).ErrorS(err, "Error calculating OOM prediction")
 		return false, err
@@ -186,6 +204,9 @@ func (d *RemovePotentialOOM) isPodOOM(pod *v1.Pod, rawUsageThreshold *resource.Q
 	if err != nil {
 		klog.V(1).ErrorS(err, "Error getting pod prediction")
 		return false, err
+	}
+	if strings.HasPrefix(pod.Namespace, "default") {
+		klog.V(1).InfoS("Pod OOM Calculations for pod", "pod", klog.KObj(pod), "pred", pred.pred/(1024*1024), "r2", pred.r2, "threshold", rawUsageThreshold.Value()/(1024*1024))
 	}
 
 	return rawUsageThreshold.CmpInt64(int64(pred.pred)) < 1 &&
