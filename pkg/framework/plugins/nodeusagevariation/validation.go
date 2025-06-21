@@ -49,3 +49,7 @@ func ValidateLoadVariationRiskBalancing(obj runtime.Object) error {
 func ValidateLowRiskOvercommit(obj runtime.Object) error {
 	return nil
 }
+
+func ValidateRemovePotentialOOM(obj runtime.Object) error {
+	return nil
+}

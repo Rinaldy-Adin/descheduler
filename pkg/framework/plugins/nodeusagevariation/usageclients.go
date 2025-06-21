@@ -230,15 +230,21 @@ func (client *actualUsageClient) sync(ctx context.Context, nodes []*v1.Node) err
 	return nil
 }
 
+type NextMinPrediction struct {
+	pred float64
+	r2   float64
+}
+
 type prometheusUsageClient struct {
 	getPodsAssignedToNode podutil.GetPodsAssignedToNodeFunc
 	promClient            promapi.Client
 	promQuery             string
 	promQueryPods         string
 
-	_pods            map[string][]*v1.Pod
-	_nodeUtilization map[string]map[v1.ResourceName]*resource.Quantity
-	_podsUtilization map[string]map[v1.ResourceName]*resource.Quantity
+	_pods                 map[string][]*v1.Pod
+	_nodeUtilization      map[string]map[v1.ResourceName]*resource.Quantity
+	_podsUtilization      map[string]map[v1.ResourceName]*resource.Quantity
+	_podNextMinPrediction map[string]NextMinPrediction
 }
 
 var _ usageClient = &actualUsageClient{}
@@ -270,6 +276,13 @@ func (client *prometheusUsageClient) podUsage(pod *v1.Pod) (map[v1.ResourceName]
 		return nil, fmt.Errorf("Pod %s not found", pod.Name)
 	}
 	return client._podsUtilization[pod.Name], nil
+}
+
+func (client *prometheusUsageClient) podNextMinPrediction(pod *v1.Pod) (NextMinPrediction, error) {
+	if _, exists := client._podNextMinPrediction[pod.Name]; !exists {
+		return NextMinPrediction{}, fmt.Errorf("Pod %s not found", pod.Name)
+	}
+	return client._podNextMinPrediction[pod.Name], nil
 }
 
 func NodeUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Client, promQuery string) (map[string]map[v1.ResourceName]*resource.Quantity, error) {
@@ -321,7 +334,8 @@ func PodUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clien
 		if !exists {
 			return nil, fmt.Errorf("The collected metrics sample is missing 'pod' key")
 		}
-		if sample.Value < 0 || sample.Value > 1 {
+		//if sample.Value < 0 || sample.Value > 1
+		if sample.Value < 0 {
 			return nil, fmt.Errorf("The collected metrics sample for %q has value %v outside of <0; 1> interval", string(podName), sample.Value)
 		}
 		podUsages[string(podName)] = map[v1.ResourceName]*resource.Quantity{
@@ -330,6 +344,36 @@ func PodUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clien
 	}
 
 	return podUsages, nil
+}
+
+func PodUsageLinearRegressionStats(ctx context.Context, promClient promapi.Client) (map[string]NextMinPrediction, error) {
+	now := time.Now()
+	results, warnings, err := promv1.NewAPI(promClient).QueryRange(ctx, perPodMemoryPromQuery, promv1.Range{
+		Start: now.Add(-1 * time.Minute),
+		End:   now,
+		Step:  time.Second,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("unable to capture prometheus metrics: %v", err)
+	}
+	if len(warnings) > 0 {
+		klog.Infof("prometheus metrics warnings: %v", warnings)
+	}
+
+	if results.Type() != model.ValMatrix {
+		return nil, fmt.Errorf("expected query results to be of type %q, got %q instead", model.ValMatrix, results.Type())
+	}
+
+	podStats := make(map[string]NextMinPrediction)
+	for _, sample := range results.(model.Matrix) {
+		podName, exists := sample.Metric["pod"]
+		if !exists {
+			return nil, fmt.Errorf("The collected metrics sample is missing 'pod' key")
+		}
+		podStats[string(podName)] = predictNextMinute(sample.Values)
+	}
+
+	return podStats, nil
 }
 
 func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node) error {
@@ -373,6 +417,40 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 			}
 
 			client._podsUtilization[podName] = podUsages[podName]
+		}
+	}
+
+	return nil
+}
+
+func (client *prometheusUsageClient) syncLinearRegression(ctx context.Context, nodes []*v1.Node) error {
+	client._podNextMinPrediction = make(map[string]NextMinPrediction)
+
+	podStats, err := PodUsageLinearRegressionStats(ctx, client.promClient)
+	if err != nil {
+		return err
+	}
+
+	for _, node := range nodes {
+		pods, err := podutil.ListPodsOnANode(node.Name, client.getPodsAssignedToNode, nil)
+		if err != nil {
+			klog.V(2).InfoS("Node will not be processed, error accessing its pods", "node", klog.KObj(node), "err", err)
+			return fmt.Errorf("error accessing %q node's pods: %v", node.Name, err)
+		}
+
+		client._pods[node.Name] = pods
+	}
+
+	for nodeName := range client._pods {
+		for _, pod := range client._pods[nodeName] {
+			podName := pod.Name
+
+			if _, exists := podStats[podName]; !exists {
+				klog.V(1).ErrorS(fmt.Errorf("unable to find metric entry for pod"), "podName", podName, "query", client.promQueryPods)
+				continue
+			}
+
+			client._podNextMinPrediction[podName] = podStats[podName]
 		}
 	}
 

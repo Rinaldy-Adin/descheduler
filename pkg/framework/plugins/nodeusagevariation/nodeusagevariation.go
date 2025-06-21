@@ -2,6 +2,7 @@ package nodeusagevariation
 
 import (
 	"context"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -285,6 +286,12 @@ func rawUsageToPctUsageMap(
 
 	usageMap := make(map[string]ResourceUsageDistributions)
 	for nodeName := range rawAvgUsage {
+		if strings.HasPrefix(nodeName, "server") {
+			raw := rawAvgUsage[nodeName]
+			klog.V(1).InfoS(
+				"rawUsageToPctUsageMap", "pod", nodeName, "avgPct", avgUsage[nodeName], "avgRaw", raw.MilliValue(),
+			)
+		}
 		usageMap[nodeName] = ResourceUsageDistributions{
 			avg:    avgUsage[nodeName],
 			stdDev: stdDevUsage[nodeName],
@@ -358,6 +365,16 @@ func getNodeCapacities(nodes []*v1.Node) map[string]resource.Quantity {
 	return capacities
 }
 
+func getPodCapacities(nodePodList map[string][]*v1.Pod) map[string]resource.Quantity {
+	capacities := map[string]resource.Quantity{}
+	for _, podList := range nodePodList {
+		for _, pod := range podList {
+			capacities[pod.Name] = *resource.NewQuantity(1, resource.DecimalSI)
+		}
+	}
+	return capacities
+}
+
 func ResourceQuantityToPercentage(
 	value, total resource.Quantity,
 ) api.Percentage {
@@ -410,11 +427,21 @@ func usageMapToKeysAndValues(usageMap map[string]ResourceUsageDistributions) []a
 	return keysAndValues
 }
 
+func getAbsNodeCapacity(node *v1.Node) *resource.Quantity {
+	absCap := resource.NewMilliQuantity(0, resource.BinarySI)
+
+	if capacity, ok := node.Status.Capacity[v1.ResourceMemory]; ok {
+		absCap.Add(capacity)
+	}
+
+	return absCap
+}
+
 func getAbsPodLimit(pod *v1.Pod) *resource.Quantity {
 	podLimit := resource.NewMilliQuantity(0, resource.BinarySI)
 
-	if pod.Spec.Resources != nil && pod.Spec.Resources.Limits != nil {
-		if limit, exists := pod.Spec.Resources.Limits[v1.ResourceMemory]; !exists {
+	for _, container := range pod.Spec.Containers {
+		if limit, exists := container.Resources.Limits[v1.ResourceMemory]; exists {
 			podLimit.Add(limit)
 		}
 	}
@@ -438,9 +465,9 @@ func getRelPodLimit(pod *v1.Pod, node *v1.Node) api.Percentage {
 func getAbsPodRequests(pod *v1.Pod) *resource.Quantity {
 	podRequest := resource.NewMilliQuantity(0, resource.BinarySI)
 
-	if pod.Spec.Resources != nil && pod.Spec.Resources.Requests != nil {
-		if request, exists := pod.Spec.Resources.Requests[v1.ResourceMemory]; !exists {
-			podRequest.Add(request)
+	for _, container := range pod.Spec.Containers {
+		if requests, exists := container.Resources.Requests[v1.ResourceMemory]; exists {
+			podRequest.Add(requests)
 		}
 	}
 

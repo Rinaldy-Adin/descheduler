@@ -60,3 +60,13 @@ label_replace(
   ),
   "node", "$1", "nodename", "(.*)"
 )`
+
+const perPodMemorySlope = `deriv(container_memory_usage_bytes{pod="abc"}[1m])`
+
+const perPodMemoryAvgByLimitPromQuery = `
+sum(container_memory_usage_bytes{container!="",container!="POD"}) by (pod, namespace)
+/
+sum(kube_pod_container_resource_limits_memory_bytes{container!="",container!="POD"}) by (pod, namespace)
+`
+
+const perPodMemoryPromQuery = `container_memory_usage_bytes{container!="", container!="POD"}`

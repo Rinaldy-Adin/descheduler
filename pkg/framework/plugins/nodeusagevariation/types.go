@@ -51,3 +51,22 @@ type LowRiskOvercommitArgs struct {
 	// not set to 100 to capture nodes with high utilization but low variance
 	RiskThreshold api.Percentage `json:"riskThreshold,omitempty"`
 }
+
+// +k8s:deepcopy-gen=true
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+
+// RemoveFailedPodsArgs holds arguments used to configure RemoveFailedPods plugin.
+type RemovePotentialOOMArgs struct {
+	metav1.TypeMeta `json:",inline"`
+
+	Namespaces *api.Namespaces `json:"namespaces,omitempty"`
+
+	// Percentage of Node util to assume prediction as OOM
+	NodePredictionThreshold api.Percentage `json:"nodeThreshold,omitempty"`
+
+	// Percentage of Pod Limit to start evicting memory increasing pods
+	PodLimitPctThreshold api.Percentage `json:"podLimitPctThreshold,omitempty"`
+
+	// Minimum R2 to assume pod as OOM
+	CoefOfDeterThreshold float64 `json:"coefOfDeterThreshold,omitempty"`
+}

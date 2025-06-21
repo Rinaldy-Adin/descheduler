@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sort"
+	"strings"
 
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -99,21 +100,16 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 	nodesMap, rawAvgUsage, rawStdDevUsage, podListMap := getNodeUsageDistributionSnapshot(nodes, l.avgUsageClient, l.stdDevUsageClient)
 	rawAvgPodUsage, rawStdDevPodUsage := getPodUsageDistributionSnapshot(podListMap, l.avgUsageClient, l.stdDevUsageClient)
 	capacities := getNodeCapacities(nodes)
+	podCapacities := getPodCapacities(podListMap)
 
-	rawAvgUsageLogKeys := quantityMapsToKeysAndValues(rawAvgUsage)
+	rawPodAvgUsageLogKeys := quantityMapsToKeysAndValues(rawAvgPodUsage)
 	klog.V(1).InfoS(
-		"Raw Average Usage Snapshot",
-		rawAvgUsageLogKeys...,
-	)
-
-	rawStdDevUsageLogKeys := quantityMapsToKeysAndValues(rawAvgUsage)
-	klog.V(1).InfoS(
-		"Raw Standard Deviation Usage Snapshot",
-		rawStdDevUsageLogKeys...,
+		"Raw Average Pod Usage Snapshot",
+		rawPodAvgUsageLogKeys...,
 	)
 
 	usageMap := rawUsageToPctUsageMap(rawAvgUsage, rawStdDevUsage, capacities)
-	podUsageMap := rawUsageToPctUsageMap(rawAvgPodUsage, rawStdDevPodUsage, capacities)
+	podUsageMap := rawUsageToPctUsageMap(rawAvgPodUsage, rawStdDevPodUsage, podCapacities)
 
 	underUsedNodes, overUsedNodes := l.classifyLoadDistribution(nodesMap, usageMap, podListMap, podUsageMap, capacities)
 
@@ -183,7 +179,16 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 				return l / u
 			}
 
-			return getNormLimit(i) > getNormLimit(j)
+			nli := getNormLimit(i)
+			nlj := getNormLimit(j)
+			if nli == nlj {
+				pi := l.calculateRiskFromPercentage(podUsageMap[podsWithLimit[i].Name].avg, podUsageMap[podsWithLimit[i].Name].stdDev)
+				pj := l.calculateRiskFromPercentage(podUsageMap[podsWithLimit[j].Name].avg, podUsageMap[podsWithLimit[j].Name].stdDev)
+
+				return pi < pj
+			}
+
+			return nli > nlj
 		})
 
 		limitToEvict := resource.NewQuantity(0, resource.BinarySI)
@@ -265,11 +270,17 @@ func (l *LowRiskOvercommit) classifyLoadDistribution(
 			nodeAbsLimits.Add(*getAbsPodLimit(pod))
 		}
 
+		klog.V(1).InfoS("Node limits", "node", klog.KObj(nodeMap[nodeName]), "rel", nodeRelLimits, "abs", nodeAbsLimits)
+
 		if nodeRelLimits > 100. {
 			for _, pod := range podList {
 				podRequest := getRelPodRequest(pod, nodeMap[nodeName])
 				podLimit := getRelPodLimit(pod, nodeMap[nodeName])
-				if podLimit == 0 || podRequest < podUsageMap[pod.Name].avg {
+				if strings.Contains(pod.Namespace, "default") {
+					klog.V(1).InfoS("Pod limits", "pod", klog.KObj(pod), "requests", podRequest, "podLimit", podLimit, "usage", podUsageMap[pod.Name].avg)
+				}
+				if podLimit != 0 && podRequest < podUsageMap[pod.Name].avg {
+					klog.V(1).InfoS("Node is high risk due to pod", "pod", klog.KObj(pod), "podRequest", podRequest, "usage", podUsageMap[pod.Name].avg)
 					nodeIsHighRisk = true
 					break
 				}

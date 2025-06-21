@@ -38,3 +38,18 @@ func SetDefaults_LoadVariationRiskBalancing(obj runtime.Object) {
 
 func SetDefaults_LowRiskOvercommit(obj runtime.Object) {
 }
+
+func SetDefaults_RemovePotentialOOM(obj runtime.Object) {
+	args := obj.(*RemovePotentialOOMArgs)
+	if args.NodePredictionThreshold == 0 {
+		args.NodePredictionThreshold = 70
+	}
+
+	if args.PodLimitPctThreshold == 0 {
+		args.PodLimitPctThreshold = 50
+	}
+
+	if args.CoefOfDeterThreshold == 0 {
+		args.CoefOfDeterThreshold = 0.8
+	}
+}
