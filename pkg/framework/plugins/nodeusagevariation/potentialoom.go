@@ -141,9 +141,8 @@ func (d *RemovePotentialOOM) Deschedule(ctx context.Context, nodes []*v1.Node) *
 // validateCanEvict looks at failedPodArgs to see if pod can be evicted given the args.
 func (d *RemovePotentialOOM) shouldEvict(pod *v1.Pod, node *v1.Node) (bool, error) {
 	var (
-		podHasLimit       bool
-		podOverThreshold  bool
-		nodeOverThreshold bool
+		podHasLimit      bool
+		podOverThreshold bool
 	)
 
 	podLimit := getAbsPodLimit(pod)
@@ -185,11 +184,17 @@ func (d *RemovePotentialOOM) shouldEvict(pod *v1.Pod, node *v1.Node) (bool, erro
 
 	nodeThreshold := float64(getAbsNodeCapacity(node).Value()) * float64(d.args.NodePredictionThreshold) / 100.
 
-	if strings.HasPrefix(pod.Namespace, "default") {
-		klog.V(1).InfoS("Calculating isPodOOM based on node threshold", "pod", klog.KObj(pod), "nodeThreshold", nodeThreshold/(1024*1024))
-	}
-
 	podThresholdForNodeOOM := resource.NewQuantity(int64(nodeThreshold)-nodeUsageRaw.Value()+podUsageRaw.Value(), resource.BinarySI)
+
+	if strings.HasPrefix(pod.Namespace, "default") {
+		klog.V(1).InfoS("Calculating isPodOOM based on node threshold",
+			"pod", klog.KObj(pod),
+			"nodeThreshold", nodeThreshold/(1024*1024),
+			"nodeUsage", nodeUsageRaw.Value()/(1024*1024),
+			"podUsage", podUsageRaw.Value()/(1024*1024),
+			"podThresholdForNodeOOM", podThresholdForNodeOOM.Value()/(1024*1024),
+		)
+	}
 
 	isOOM, err := d.isPodOOM(pod, podThresholdForNodeOOM)
 	if err != nil {
