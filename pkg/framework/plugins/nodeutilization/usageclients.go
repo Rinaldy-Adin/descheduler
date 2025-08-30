@@ -278,7 +278,7 @@ func NodeUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clie
 
 	nodeUsages := make(map[string]map[v1.ResourceName]*resource.Quantity)
 	for _, sample := range results.(model.Vector) {
-		nodeName, exists := sample.Metric["instance"]
+		nodeName, exists := sample.Metric["nodename"]
 		if !exists {
 			return nil, fmt.Errorf("The collected metrics sample is missing 'instance' key")
 		}

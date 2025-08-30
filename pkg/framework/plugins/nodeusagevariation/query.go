@@ -63,11 +63,12 @@ label_replace(
 
 const perPodMemorySlope = `deriv(container_memory_usage_bytes{pod="abc"}[1m])`
 
-const perNodeMemoryRawPromQuery = `instance:node_memory_utilisation:ratio * node_memory_MemTotal_bytes`
+// const perNodeMemoryRawPromQuery = `instance:node_memory_utilisation:ratio * node_memory_MemTotal_bytes`
+const perNodeMemoryRawPromQuery = `avg_over_time(instance:node_memory_utilisation:ratio[1m]) * node_memory_MemTotal_bytes`
 
-const perPodMaxMemoryRawPromQuery = `
+const perPodMemoryRawPromQuery = `
 sum by(pod) (
-  max_over_time(container_memory_usage_bytes{container!="", container!="POD"}[1m])
+  container_memory_usage_bytes{container!="", container!="POD"}
 )
 `
 

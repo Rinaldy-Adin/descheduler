@@ -13,14 +13,12 @@ func computeLinearRegressionFromSamples(samples []model.SamplePair) (slope, inte
 
 	n := float64(len(samples))
 
-	// Convert to float arrays
 	var sumX, sumY float64
 	x := make([]float64, len(samples))
 	y := make([]float64, len(samples))
 
 	for i, s := range samples {
-		// Assuming Time has method Unix() or UnixMilli()
-		ts := float64(s.Timestamp.Unix()) // adjust if you have UnixMilli()
+		ts := float64(s.Timestamp.Unix())
 		val := float64(s.Value)
 
 		x[i] = ts
@@ -33,7 +31,6 @@ func computeLinearRegressionFromSamples(samples []model.SamplePair) (slope, inte
 	meanX := sumX / n
 	meanY := sumY / n
 
-	// Regression calculation
 	var numerator, denominator float64
 	for i := range samples {
 		numerator += (x[i] - meanX) * (y[i] - meanY)
@@ -42,7 +39,6 @@ func computeLinearRegressionFromSamples(samples []model.SamplePair) (slope, inte
 	slope = numerator / denominator
 	intercept = meanY - slope*meanX
 
-	// R² calculation
 	var ssRes, ssTot float64
 	for i := range samples {
 		yi := y[i]

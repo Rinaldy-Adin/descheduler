@@ -182,8 +182,8 @@ func (l *LowRiskOvercommit) Balance(ctx context.Context, nodes []*v1.Node) *fram
 			nli := getNormLimit(i)
 			nlj := getNormLimit(j)
 			if nli == nlj {
-				pi := l.calculateRiskFromPercentage(podUsageMap[podsWithLimit[i].Name].avg, podUsageMap[podsWithLimit[i].Name].stdDev)
-				pj := l.calculateRiskFromPercentage(podUsageMap[podsWithLimit[j].Name].avg, podUsageMap[podsWithLimit[j].Name].stdDev)
+				pi := podUsageMap[podsWithLimit[i].Name].avg
+				pj := podUsageMap[podsWithLimit[j].Name].avg
 
 				return pi < pj
 			}

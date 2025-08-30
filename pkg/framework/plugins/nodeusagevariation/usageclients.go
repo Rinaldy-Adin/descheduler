@@ -273,7 +273,7 @@ func (client *prometheusUsageClient) pods(node string) []*v1.Pod {
 
 func (client *prometheusUsageClient) podUsage(pod *v1.Pod) (map[v1.ResourceName]*resource.Quantity, error) {
 	if _, exists := client._podsUtilization[pod.Name]; !exists {
-		return nil, fmt.Errorf("Pod %s not found", pod.Name)
+		return nil, fmt.Errorf("Pod %s not found, podsutil len %d", pod.Name, len(client._podsUtilization))
 	}
 	return client._podsUtilization[pod.Name], nil
 }
@@ -304,7 +304,8 @@ func NodeUsageFromPrometheusMetrics(ctx context.Context, promClient promapi.Clie
 		if !exists {
 			return nil, fmt.Errorf("The collected metrics sample is missing 'nodename' key")
 		}
-		if sample.Value < 0 || sample.Value > 1 {
+		//if sample.Value < 0 || sample.Value > 1
+		if sample.Value < 0 {
 			return nil, fmt.Errorf("The collected metrics sample for %q has value %v outside of <0; 1> interval", string(nodeName), sample.Value)
 		}
 		nodeUsages[string(nodeName)] = map[v1.ResourceName]*resource.Quantity{
@@ -381,16 +382,19 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 	client._podsUtilization = make(map[string]map[v1.ResourceName]*resource.Quantity)
 	client._pods = make(map[string][]*v1.Pod)
 
+	klog.V(1).InfoS("NodeUsageFromPrometheusMetrics")
 	nodeUsages, err := NodeUsageFromPrometheusMetrics(ctx, client.promClient, client.promQuery)
 	if err != nil {
 		return err
 	}
 
+	klog.V(1).InfoS("PodUsageFromPrometheusMetrics")
 	podUsages, err := PodUsageFromPrometheusMetrics(ctx, client.promClient, client.promQueryPods)
 	if err != nil {
 		return err
 	}
 
+	klog.V(1).InfoS("Iterating over nodes")
 	for _, node := range nodes {
 		if _, exists := nodeUsages[node.Name]; !exists {
 			return fmt.Errorf("unable to find metric entry for %v", node.Name)
@@ -406,6 +410,7 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 		client._nodeUtilization[node.Name] = nodeUsages[node.Name]
 	}
 
+	klog.V(1).InfoS("Iterating over pods")
 	for nodeName := range client._pods {
 		for _, pod := range client._pods[nodeName] {
 			podName := pod.Name
@@ -416,9 +421,11 @@ func (client *prometheusUsageClient) sync(ctx context.Context, nodes []*v1.Node)
 				continue
 			}
 
+			klog.V(1).InfoS("Found util for pod", "pod", klog.KObj(pod))
 			client._podsUtilization[podName] = podUsages[podName]
 		}
 	}
+	klog.V(1).InfoS("Pods Util Len", "len", len(client._podsUtilization))
 
 	return nil
 }

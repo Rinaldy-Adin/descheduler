@@ -80,7 +80,7 @@ func NewRemovePotentialOOM(args runtime.Object, handle frameworktypes.Handle) (f
 		handle.GetPodsAssignedToNodeFunc(),
 		handle.PrometheusClient(),
 		perNodeMemoryRawPromQuery,
-		perPodMaxMemoryRawPromQuery,
+		perPodMemoryRawPromQuery,
 	)
 
 	return &RemovePotentialOOM{
@@ -98,8 +98,21 @@ func (d *RemovePotentialOOM) Name() string {
 
 // Deschedule extension point implementation for the plugin
 func (d *RemovePotentialOOM) Deschedule(ctx context.Context, nodes []*v1.Node) *frameworktypes.Status {
-	d.usageClient.sync(ctx, nodes)
+	err := d.usageClient.sync(ctx, nodes)
+	if err != nil {
+		klog.V(1).ErrorS(err, "Error syncing data")
+		return &frameworktypes.Status{
+			Err: fmt.Errorf("error syncing data: %v", err),
+		}
+	}
+
 	d.usageClient.syncLinearRegression(ctx, nodes)
+	if err != nil {
+		klog.V(1).ErrorS(err, "Error syncLinearRegression")
+		return &frameworktypes.Status{
+			Err: fmt.Errorf("error syncLinearRegression : %v", err),
+		}
+	}
 
 	for _, node := range nodes {
 		klog.V(2).InfoS("Processing node", "node", klog.KObj(node))
@@ -140,47 +153,15 @@ func (d *RemovePotentialOOM) Deschedule(ctx context.Context, nodes []*v1.Node) *
 
 // validateCanEvict looks at failedPodArgs to see if pod can be evicted given the args.
 func (d *RemovePotentialOOM) shouldEvict(pod *v1.Pod, node *v1.Node) (bool, error) {
-	var (
-		podHasLimit      bool
-		podOverThreshold bool
-	)
-
-	podLimit := getAbsPodLimit(pod)
-	if !podLimit.IsZero() {
-		podHasLimit = true
-	}
-
 	podResourceNames, err := d.usageClient.podUsage(pod)
 	if err != nil {
 		klog.V(1).ErrorS(err, "Error getting pod usage")
 		return false, err
 	}
 	podUsageRaw := podResourceNames[MetricResource]
-	absPodLimit := getAbsPodLimit(pod)
-	if !absPodLimit.IsZero() {
-		podUsageByLimitPct := float64(podUsageRaw.Value()) / float64(absPodLimit.Value()) * 100.
-		if strings.HasPrefix(pod.Namespace, "default") {
-			klog.V(1).InfoS("Pod usage by limit", "pod", klog.KObj(pod), "usage", podUsageByLimitPct)
-		}
-		if podUsageByLimitPct > float64(d.args.PodLimitPctThreshold) {
-			podOverThreshold = true
-		}
-	}
 
 	nodeResourceNames := d.usageClient.nodeUtilization(node.Name)
 	nodeUsageRaw := nodeResourceNames[MetricResource]
-
-	if podHasLimit && podOverThreshold {
-		if strings.HasPrefix(pod.Namespace, "default") {
-			klog.V(1).InfoS("Calculating isPodOOM based on pod limit", "pod", klog.KObj(pod))
-		}
-		isOOM, err := d.isPodOOM(pod, absPodLimit)
-		if err != nil {
-			klog.V(1).ErrorS(err, "Error calculating OOM prediction")
-			return false, err
-		}
-		return isOOM, nil
-	}
 
 	nodeThreshold := float64(getAbsNodeCapacity(node).Value()) * float64(d.args.NodePredictionThreshold) / 100.
 
