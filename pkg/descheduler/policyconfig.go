@@ -173,11 +173,9 @@ func validateDeschedulerConfiguration(in api.DeschedulerPolicy, registry pluginr
 			if prometheusConfig.Prometheus.URL == "" {
 				errorsInPolicy = append(errorsInPolicy, fmt.Errorf("prometheus URL is required when prometheus is enabled"))
 			} else {
-				u, err := url.Parse(prometheusConfig.Prometheus.URL)
+				_, err := url.Parse(prometheusConfig.Prometheus.URL)
 				if err != nil {
 					errorsInPolicy = append(errorsInPolicy, fmt.Errorf("error parsing prometheus URL: %v", err))
-				} else if u.Scheme != "https" {
-					errorsInPolicy = append(errorsInPolicy, fmt.Errorf("prometheus URL's scheme is not https, got %q instead", u.Scheme))
 				}
 			}
 

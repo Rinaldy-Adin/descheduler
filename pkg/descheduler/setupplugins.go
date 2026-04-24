@@ -19,6 +19,7 @@ package descheduler
 import (
 	"sigs.k8s.io/descheduler/pkg/framework/pluginregistry"
 	"sigs.k8s.io/descheduler/pkg/framework/plugins/defaultevictor"
+	"sigs.k8s.io/descheduler/pkg/framework/plugins/nodeusagevariation"
 	"sigs.k8s.io/descheduler/pkg/framework/plugins/nodeutilization"
 	"sigs.k8s.io/descheduler/pkg/framework/plugins/podlifetime"
 	"sigs.k8s.io/descheduler/pkg/framework/plugins/removeduplicates"
@@ -39,6 +40,9 @@ func RegisterDefaultPlugins(registry pluginregistry.Registry) {
 	pluginregistry.Register(defaultevictor.PluginName, defaultevictor.New, &defaultevictor.DefaultEvictor{}, &defaultevictor.DefaultEvictorArgs{}, defaultevictor.ValidateDefaultEvictorArgs, defaultevictor.SetDefaults_DefaultEvictorArgs, registry)
 	pluginregistry.Register(nodeutilization.LowNodeUtilizationPluginName, nodeutilization.NewLowNodeUtilization, &nodeutilization.LowNodeUtilization{}, &nodeutilization.LowNodeUtilizationArgs{}, nodeutilization.ValidateLowNodeUtilizationArgs, nodeutilization.SetDefaults_LowNodeUtilizationArgs, registry)
 	pluginregistry.Register(nodeutilization.HighNodeUtilizationPluginName, nodeutilization.NewHighNodeUtilization, &nodeutilization.HighNodeUtilization{}, &nodeutilization.HighNodeUtilizationArgs{}, nodeutilization.ValidateHighNodeUtilizationArgs, nodeutilization.SetDefaults_HighNodeUtilizationArgs, registry)
+	pluginregistry.Register(nodeusagevariation.LoadVariationRiskBalancingPluginName, nodeusagevariation.NewLoadVariationRiskBalancing, &nodeusagevariation.LoadVariationRiskBalancing{}, &nodeusagevariation.LoadVariationRiskBalancingArgs{}, nodeusagevariation.ValidateLoadVariationRiskBalancing, nodeusagevariation.SetDefaults_LoadVariationRiskBalancing, registry)
+	pluginregistry.Register(nodeusagevariation.LowRiskOvercommitPluginName, nodeusagevariation.NewLowRiskOvercommit, &nodeusagevariation.LowRiskOvercommit{}, &nodeusagevariation.LowRiskOvercommitArgs{}, nodeusagevariation.ValidateLowRiskOvercommit, nodeusagevariation.SetDefaults_LowRiskOvercommit, registry)
+	pluginregistry.Register(nodeusagevariation.RemovePotentialOOMPluginName, nodeusagevariation.NewRemovePotentialOOM, &nodeusagevariation.RemovePotentialOOM{}, &nodeusagevariation.RemovePotentialOOMArgs{}, nodeusagevariation.ValidateRemovePotentialOOM, nodeusagevariation.SetDefaults_RemovePotentialOOM, registry)
 	pluginregistry.Register(podlifetime.PluginName, podlifetime.New, &podlifetime.PodLifeTime{}, &podlifetime.PodLifeTimeArgs{}, podlifetime.ValidatePodLifeTimeArgs, podlifetime.SetDefaults_PodLifeTimeArgs, registry)
 	pluginregistry.Register(removeduplicates.PluginName, removeduplicates.New, &removeduplicates.RemoveDuplicates{}, &removeduplicates.RemoveDuplicatesArgs{}, removeduplicates.ValidateRemoveDuplicatesArgs, removeduplicates.SetDefaults_RemoveDuplicatesArgs, registry)
 	pluginregistry.Register(removefailedpods.PluginName, removefailedpods.New, &removefailedpods.RemoveFailedPods{}, &removefailedpods.RemoveFailedPodsArgs{}, removefailedpods.ValidateRemoveFailedPodsArgs, removefailedpods.SetDefaults_RemoveFailedPodsArgs, registry)
